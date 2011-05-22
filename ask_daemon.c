@@ -19,6 +19,8 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 /*struct passwd {
 	char   *pw_name;       // username
@@ -133,7 +135,7 @@ void db_add_user(struct passwd *u) {
 	char *msg;
 	msg = (char *)malloc(100*sizeof(char));
 	query = (char *) malloc(sizeof(char));
-	sprintf(query, "insert into users(login, password, home, shell, uid, gid, servers_server_id) values('%s', '%s', '%s', '%s', %d, %d, 1)", u->pw_name, u->pw_passwd, u->pw_dir, u->pw_shell, u->pw_uid, u->pw_gid);
+	sprintf(query, "insert into account_manager_db.user(login, password, home, shell, uid, gid) values('%s', '%s', '%s', '%s', %d, %d)", u->pw_name, u->pw_passwd, u->pw_dir, u->pw_shell, u->pw_uid, u->pw_gid);
 	mysql_query(&mysql, query);
 	/*if(NULL!=(result = mysql_store_result(&mysql))) {
 		num_fields = mysql_num_fields(result);
@@ -150,7 +152,8 @@ void db_add_user(struct passwd *u) {
 void db_add_group(struct group *g) {
 	char *query;
 	query = (char *) malloc(sizeof(char));
-	sprintf(query, "insert into groups(name, gid) values('%s', %d)", g->gr_name, g->gr_gid);
+	sprintf(query, "insert into account_manager_db.group(name, gid) values('%s', %d)", g->gr_name, g->gr_gid);
+	printf("%s\n", query);
 	mysql_query(&mysql, query);
 }
 
@@ -212,22 +215,13 @@ int get_count(char *path) {
 }
 
 void users_system_db(struct passwd **us) {		
-	//int i = 0;
 	struct passwd *u = NULL;
 	
-	db_truncate("users");
+	db_truncate("account_manager_db.user");
 	while((u = getpwent()) != NULL)
 	{
 		if(u->pw_uid >= 1000)
 			db_add_user(u);
-		/*us[i]->pw_uid = u->pw_uid;
-		us[i]->pw_gid = u->pw_gid;
-		us[i]->pw_name = strdup(u->pw_name);
-		us[i]->pw_passwd = strdup(u->pw_passwd);
-		us[i]->pw_gecos = strdup(u->pw_gecos);
-		us[i]->pw_shell = strdup(u->pw_shell);
-		us[i]->pw_dir = strdup(u->pw_dir);
-		i++;*/
 	}
 }
 
@@ -243,7 +237,7 @@ void users_db_system() {
 	}
 	struct passwd *u = NULL;
 	u=(struct passwd *)malloc(sizeof(struct passwd));
-	mysql_query(&mysql, "select login, password, uid, gid, home, shell from users");
+	mysql_query(&mysql, "select login, password, uid, gid, home, shell from user");
 	result = mysql_store_result(&mysql);
 	while((row = mysql_fetch_row(result))) {
 		u->pw_name = row[0];
@@ -258,17 +252,13 @@ void users_db_system() {
 }
 
 void groups_system_db(struct group **gr) {		
-	//int i = 0;
 	struct group *g = NULL;
 
-	db_truncate("groups");
+	db_truncate("account_manager_db.group");
 	while((g = getgrent()) != NULL)
 	{
 		if(g->gr_gid >= 1000)
 			db_add_group(g);
-		/*gr[i]->gr_gid = g->gr_gid;
-		gr[i]->gr_name = strdup(g->gr_name);
-		i++;*/
 	}
 }
 
@@ -285,7 +275,7 @@ void groups_db_system() {
 	}
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
-	mysql_query(&mysql, "select name, gid from groups");
+	mysql_query(&mysql, "select name, gid from group");
 	result = mysql_store_result(&mysql);
 	while((row = mysql_fetch_row(result))) {
 		g->gr_name = row[0];
@@ -294,6 +284,49 @@ void groups_db_system() {
 		putgrent(g, file);
 	}
 	fclose(file);
+}
+
+void socket_server(int port) {
+	char msg[100], buffer[255];
+	int sock, clsock, n;
+	socklen_t clilen;
+	struct sockaddr_in serv_addr, cli_addr;
+	
+	sock = socket(AF_INET, SOCK_STREAM, 0);
+	if(sock < 0) {
+		sprintf(msg, "ERROR: Unable to open socket!");
+		log_message(LOG_FILE, msg);
+		return;
+	}
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_addr.s_addr = INADDR_ANY;
+	serv_addr.sin_port = htons(port);
+	if (bind (sock, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+		sprintf(msg, "ERROR: Unable to bind socket!");
+		log_message(LOG_FILE, msg);
+		return;
+	}
+	
+	//while(true) {
+		listen(sock, 10);
+		clilen = sizeof(cli_addr);
+		clsock = accept(sock, (struct sockaddr *) &cli_addr, &clilen);
+		if(clsock < 0) {
+			sprintf(msg, "ERROR: Something went wrong while accepting connection!");
+			log_message(LOG_FILE, msg);
+			return;
+		}
+		bzero(buffer,255);
+		n = read(clsock,buffer,255);
+      if (n < 0) {
+			sprintf(msg, "ERROR: Some problems while reading from socket!");
+			log_message(LOG_FILE, msg);
+			return;
+		}
+      printf("Message: %s\n",buffer);
+		close(clsock);
+	//}
+	close(sock);
 }
 
 int main(int argc, char **argv) {
@@ -313,20 +346,12 @@ int main(int argc, char **argv) {
 	
 	db_connect("lapix", "ask", "ask", "account_manager_db");
 	
-	users_system_db(users);
+	socket_server(5555);
+	
+	//users_system_db(users);
 	//groups_system_db(groups);
 	//users_db_system();
 	//groups_db_system();
-	
-	/*i = 0;
-	while(i < user_count) {
-		if(users[i]->pw_uid >= 1000)
-			db_add_user(users[i]);
-		i++;
-	}
-	for(i = 0; i < sizeof(groups); i++) {
-		db_add_group(groups[i]);
-	}*/
 	
 	db_disconnect();
 	
