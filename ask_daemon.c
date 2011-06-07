@@ -251,7 +251,7 @@ void users_db_system() {
 	}
 	struct passwd *u = NULL;
 	u=(struct passwd *)malloc(sizeof(struct passwd));
-	mysql_query(&mysql, "select login, password, uid, gid, home, shell from user");
+	mysql_query(&mysql, "select distinct login, password, uid, gid, home, shell from user where uid not in (select uid from ign_user)");
 	result = mysql_store_result(&mysql);
 	while((row = mysql_fetch_row(result))) {
 		u->pw_name = row[0];
@@ -299,7 +299,7 @@ void groups_db_system() {
 	}
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
-	mysql_query(&mysql, "select name, gid from group");
+	mysql_query(&mysql, "select distinct name, gid from group where gid not in (select gid from ign_group)");
 	result = mysql_store_result(&mysql);
 	while((row = mysql_fetch_row(result))) {
 		g->gr_name = row[0];
