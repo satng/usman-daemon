@@ -1,6 +1,6 @@
 /*
  * 
- * ASKDaemon v0.0.1.2
+ * ASKDaemon v0.0.2.0
  * null@student.agh.edu.pl
  * 
  */
@@ -354,6 +354,43 @@ void get_server_id(char *hostname) {
 	mysql_free_result(result);
 }
 
+void execute_commands(int id) {
+	MYSQL_RES *result;
+	MYSQL_ROW row;
+	char *query;
+	
+	query = (char *) malloc(100*sizeof(char));
+	sprintf(query, "select command_type, command from account_manager_db.command_type where server_id='%d'", id);
+	mysql_query(&mysql, query);
+	result = mysql_store_result(&mysql);
+	while ((row = mysql_fetch_row(result)))
+	{
+		switch(atoi(row[0])) {
+			case 0: {
+				printf("Add users command: %s\n", row[1]);
+				break;
+			}
+			case 1: {
+				printf("Update users command: %s\n", row[1]);
+				break;
+			}
+			case 2: {
+				printf("Add groups command: %s\n", row[1]);
+				break;
+			}
+			case 3: {
+				printf("Update groups command: %s\n", row[1]);
+				break;
+			}
+			default: {
+				printf("NOT SUPPORTED!\n");
+				break;
+			}
+		}
+	}
+	mysql_free_result(result);
+}
+
 int main(int argc, char **argv) {
 	//daemonize();
 	
@@ -373,8 +410,9 @@ int main(int argc, char **argv) {
 		groups[i]=(struct group *)malloc(sizeof(struct group));
 	
 	db_connect("lapix", "ask", "ask", "account_manager_db");
-	
 	get_server_id(server.hostname);
+	
+	execute_commands(server.id);
 	//printf("%d, %s, %d\n", server.id, server.hostname, server.port);
 	//socket_server(server.port);
 	
