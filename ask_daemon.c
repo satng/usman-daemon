@@ -34,13 +34,16 @@
 struct group {
 	char *gr_name; char *gr_passwd; gid_t gr_gid; char **gr_mem;
 };*/
-
+struct server_info {
+	int id; char *hostname; int port;
+} server;
 #define RUNNING_DIR	"/tmp"
 #define LOCK_FILE	"ask_daemon.lock"
 #define LOG_FILE	"ask_daemon.log"
 #define PASSWD		"/etc/passwd"
 #define GROUP		"/etc/group"
 MYSQL mysql;
+
 
 void log_message(char *filename, char *message) {
 	
@@ -329,8 +332,33 @@ void socket_server(int port) {
 	close(sock);
 }
 
+void get_server_id(char *hostname) {
+	MYSQL_RES *result;
+	MYSQL_ROW row;
+	char *query;
+	//int num_fields;
+	
+	query = (char *) malloc(200*sizeof(char));
+	sprintf(query, "select id, port_number from account_manager_db.server where host_name='%s'", hostname);
+	mysql_query(&mysql, query);
+	result = mysql_store_result(&mysql);
+	row = mysql_fetch_row(result);
+	server.id = atoi(row[0]);
+	server.port = atoi(row[1]);
+	//num_fields = mysql_num_fields(result);
+	/*while ((row = mysql_fetch_row(result)))
+	{
+		server.id = atoi(row[0]);
+		server.port = atoi(row[1]);
+	}*/
+	mysql_free_result(result);
+}
+
 int main(int argc, char **argv) {
 	//daemonize();
+	
+	server.hostname = (char*)malloc(45*sizeof(char));
+	gethostname(server.hostname, 45*sizeof(char));
 	
 	int user_count = 0, group_count = 0, i = 0;
 	
@@ -346,7 +374,9 @@ int main(int argc, char **argv) {
 	
 	db_connect("lapix", "ask", "ask", "account_manager_db");
 	
-	socket_server(5555);
+	get_server_id(server.hostname);
+	//printf("%d, %s, %d\n", server.id, server.hostname, server.port);
+	//socket_server(server.port);
 	
 	//users_system_db(users);
 	//groups_system_db(groups);
