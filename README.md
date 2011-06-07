@@ -1,0 +1,1 @@
+The server daemon for the USMAN Linux Server User Manager.
