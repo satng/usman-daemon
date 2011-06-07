@@ -34,6 +34,7 @@
 struct group {
 	char *gr_name; char *gr_passwd; gid_t gr_gid; char **gr_mem;
 };*/
+
 struct server_info {
 	int id; char *hostname; int port;
 } server;
@@ -88,7 +89,7 @@ void daemonize() {
 	char str[10];
 	
 	if(getppid() == 1) return; // juz daemon
-
+	
 	if(daemon(1,0) < 0) exit(-1);
 
 	umask(027); // prawa dostepu do plikow / 750
@@ -96,8 +97,8 @@ void daemonize() {
 	chdir(RUNNING_DIR); // zmiana sciezki roboczej
 
 	lfp = open(LOCK_FILE,O_RDWR|O_CREAT,0640);
-	if (lfp < 0) exit(0); // blad uchwytu
-	if (lockf(lfp,F_TLOCK,0) < 0) exit(0); // blad blokady
+	if (lfp < 0) exit(-2); // blad uchwytu
+	if (lockf(lfp,F_TLOCK,0) < 0) exit(-3); // blad blokady
 
 	sprintf(str,"%d\n",getpid());
 	write(lfp,str,strlen(str)); // zapis pid
@@ -357,9 +358,10 @@ void get_server_id(char *hostname) {
 void execute_commands(int id) {
 	MYSQL_RES *result;
 	MYSQL_ROW row;
-	char *query;
+	char *query, *msg;
 	
 	query = (char *) malloc(100*sizeof(char));
+	msg = (char *) malloc(100*sizeof(char));
 	sprintf(query, "select command_type, command from account_manager_db.command_type where server_id='%d'", id);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
@@ -367,33 +369,34 @@ void execute_commands(int id) {
 	{
 		switch(atoi(row[0])) {
 			case 0: {
-				printf("Add users command: %s\n", row[1]);
+				sprintf(msg, "Add users command: %s", row[1]);
 				break;
 			}
 			case 1: {
-				printf("Update users command: %s\n", row[1]);
+				sprintf(msg, "Update users command: %s", row[1]);
 				break;
 			}
 			case 2: {
-				printf("Add groups command: %s\n", row[1]);
+				sprintf(msg, "Add groups command: %s", row[1]);
 				break;
 			}
 			case 3: {
-				printf("Update groups command: %s\n", row[1]);
+				sprintf(msg, "Update groups command: %s", row[1]);
 				break;
 			}
 			default: {
-				printf("NOT SUPPORTED!\n");
+				sprintf(msg, "NOT SUPPORTED!");
 				break;
 			}
 		}
+		log_message(LOG_FILE, msg);
 	}
 	mysql_free_result(result);
 }
 
 int main(int argc, char **argv) {
-	//daemonize();
-	
+	daemonize();
+
 	server.hostname = (char*)malloc(45*sizeof(char));
 	gethostname(server.hostname, 45*sizeof(char));
 	
@@ -412,7 +415,7 @@ int main(int argc, char **argv) {
 	db_connect("lapix", "ask", "ask", "account_manager_db");
 	get_server_id(server.hostname);
 	
-	execute_commands(server.id);
+	//execute_commands(server.id);
 	//printf("%d, %s, %d\n", server.id, server.hostname, server.port);
 	//socket_server(server.port);
 	
