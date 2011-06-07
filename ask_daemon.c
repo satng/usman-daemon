@@ -43,6 +43,7 @@ struct server_info {
 #define LOG_FILE	"ask_daemon.log"
 #define PASSWD		"/etc/passwd"
 #define GROUP		"/etc/group"
+#define DBNAME		"account_manager_db"
 MYSQL mysql;
 
 
@@ -115,7 +116,8 @@ void daemonize() {
 }
 
 void db_connect(char *host, char *login, char *pass, char *dbase) {
-	char msg[100];
+	char *msg;
+	msg=(char*)malloc(100*sizeof(char));
 	if(mysql_init(&mysql) == NULL)
 	{
 		log_message(LOG_FILE, "MySql Initialization Error!");
@@ -133,51 +135,27 @@ void db_connect(char *host, char *login, char *pass, char *dbase) {
 }
 
 void db_add_user(struct passwd *u) {
-	/*MYSQL_RES *result;
-	int num_fields = 0;*/
 	char *query;
 	char *msg;
 	msg = (char*)malloc(100*sizeof(char));
 	query = (char*)malloc(200*sizeof(char));
-	sprintf(query, "insert into account_manager_db.user(login, password, home, shell, uid, gid) values('%s', '%s', '%s', '%s', %d, %d)", u->pw_name, u->pw_passwd, u->pw_dir, u->pw_shell, u->pw_uid, u->pw_gid);
+	sprintf(query, "insert into user(login, password, home, shell, uid, gid) values('%s', '%s', '%s', '%s', %d, %d)", u->pw_name, u->pw_passwd, u->pw_dir, u->pw_shell, u->pw_uid, u->pw_gid);
 	mysql_query(&mysql, query);
-	/*if(NULL!=(result = mysql_store_result(&mysql))) {
-		num_fields = mysql_num_fields(result);
-		//printf("%d / %s\n", num_fields, mysql_error(&mysql));
-		sprintf(msg, "Rows affected: %d.", num_fields);
-		log_message(LOG_FILE, msg);
-	} else {
-		//printf("%d / %s\n", mysql_field_count(&mysql), mysql_error(&mysql));
-		sprintf(msg, "Rows affected: %d.", mysql_field_count(&mysql));
-		log_message(LOG_FILE, msg);
-	}*/
 }
 
 void db_add_group(struct group *g) {
 	char *query;
 	query = (char*)malloc(200*sizeof(char));
-	sprintf(query, "insert into account_manager_db.group(name, gid) values('%s', %d)", g->gr_name, g->gr_gid);
+	sprintf(query, "insert into group(name, gid) values('%s', %d)", g->gr_name, g->gr_gid);
 	printf("%s\n", query);
 	mysql_query(&mysql, query);
 }
 
 void db_truncate(char *table) {
-	/*MYSQL_RES *result;
-	int num_fields = 0;*/
 	char *query;
 	query = (char *) malloc(100*sizeof(char));
 	sprintf(query, "truncate table %s", table);
 	mysql_query(&mysql, query);
-	/*if(NULL!=(result = mysql_store_result(&mysql))) {
-		num_fields = mysql_num_fields(result);
-		//printf("%d / %s\n", num_fields, mysql_error(&mysql));
-		//sprintf(msg, "Rows affected: %d.", num_fields);
-		//log_message(LOG_FILE, msg);
-	} else {
-		//printf("%d / %s\n", mysql_field_count(&mysql), mysql_error(&mysql));
-		//sprintf(msg, "Rows affected: %d\nERROR: %s.", mysql_field_count(&mysql), mysql_error(&mysql));
-		//log_message(LOG_FILE, msg);
-	}*/
 }
 
 void db_query(char *query) {
@@ -228,7 +206,7 @@ void users_system_db(struct passwd **us) {
 	query = (char*)malloc(100*sizeof(char));
 	while((u = getpwent()) != NULL)
 	{
-		sprintf(query, "select * from account_manager_db.ign_user where uid='%d'", u->pw_uid);
+		sprintf(query, "select * from ign_user where uid='%d'", u->pw_uid);
 		mysql_query(&mysql, query);
 		result = mysql_store_result(&mysql);
 		num_rows = mysql_num_rows(result);
@@ -275,7 +253,7 @@ void groups_system_db(struct group **gr) {
 	query = (char*)malloc(100*sizeof(char));
 	while((g = getgrent()) != NULL)
 	{
-		sprintf(query, "select * from account_manager_db.ign_group where gid='%d'", g->gr_gid);
+		sprintf(query, "select * from ign_group where gid='%d'", g->gr_gid);
 		mysql_query(&mysql, query);
 		result = mysql_store_result(&mysql);
 		num_rows = mysql_num_rows(result);
@@ -353,14 +331,16 @@ void socket_server(int port) {
 	close(sock);
 }
 
-void get_server_id(char *hostname) {
+void get_server_data() {
 	MYSQL_RES *result;
 	MYSQL_ROW row;
 	char *query;
 	//int num_fields;
 	
+	server.hostname = (char*)malloc(45*sizeof(char));
+	gethostname(server.hostname, 45*sizeof(char));
 	query = (char *) malloc(200*sizeof(char));
-	sprintf(query, "select id, port_number from account_manager_db.server where host_name='%s'", hostname);
+	sprintf(query, "select id, port_number from server where host_name='%s'", server.hostname);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	row = mysql_fetch_row(result);
@@ -382,7 +362,7 @@ void execute_commands(int id) {
 	
 	query = (char *) malloc(100*sizeof(char));
 	msg = (char *) malloc(100*sizeof(char));
-	sprintf(query, "select command_type, command from account_manager_db.command_type where server_id='%d'", id);
+	sprintf(query, "select command_type, command from command_type where server_id='%d'", id);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	while ((row = mysql_fetch_row(result)))
@@ -416,9 +396,6 @@ void execute_commands(int id) {
 
 int main(int argc, char **argv) {
 	daemonize();
-
-	server.hostname = (char*)malloc(45*sizeof(char));
-	gethostname(server.hostname, 45*sizeof(char));
 	
 	int user_count = 0, group_count = 0, i = 0;
 	
@@ -432,8 +409,8 @@ int main(int argc, char **argv) {
 	for(i = 0; i < group_count; i++)
 		groups[i]=(struct group *)malloc(sizeof(struct group));
 	
-	db_connect("lapix", "ask", "ask", "account_manager_db");
-	get_server_id(server.hostname);
+	db_connect("lapix", "ask", "ask", DBNAME);
+	get_server_data();
 	
 	//execute_commands(server.id);
 	//printf("%d, %s, %d\n", server.id, server.hostname, server.port);
