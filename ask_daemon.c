@@ -219,13 +219,23 @@ int get_count(char *path) {
 }
 
 void users_system_db(struct passwd **us) {		
-	struct passwd *u = NULL;
-	
-	db_truncate("account_manager_db.user");
+	MYSQL_RES *result;
+	int num_rows;
+	char *query;
+   struct passwd *u = NULL;
+
+	//db_truncate("account_manager_db.user");
+	query = (char*)malloc(100*sizeof(char));
 	while((u = getpwent()) != NULL)
 	{
-		if(u->pw_uid >= 1000)
+		sprintf(query, "select * from account_manager_db.ign_user where uid='%d'", u->pw_uid);
+		mysql_query(&mysql, query);
+		result = mysql_store_result(&mysql);
+		num_rows = mysql_num_rows(result);
+		if(num_rows == 0) {
 			db_add_user(u);
+		}
+		mysql_free_result(result);
 	}
 }
 
@@ -255,14 +265,24 @@ void users_db_system() {
 	fclose(file);
 }
 
-void groups_system_db(struct group **gr) {		
+void groups_system_db(struct group **gr) {
+	MYSQL_RES *result;
+	int num_rows;
+	char *query;
 	struct group *g = NULL;
 
-	db_truncate("account_manager_db.group");
+	//db_truncate("account_manager_db.group");
+	query = (char*)malloc(100*sizeof(char));
 	while((g = getgrent()) != NULL)
 	{
-		if(g->gr_gid >= 1000)
+		sprintf(query, "select * from account_manager_db.ign_group where gid='%d'", g->gr_gid);
+		mysql_query(&mysql, query);
+		result = mysql_store_result(&mysql);
+		num_rows = mysql_num_rows(result);
+		if(num_rows == 0) {
 			db_add_group(g);
+		}
+		mysql_free_result(result);
 	}
 }
 
