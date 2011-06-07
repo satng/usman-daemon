@@ -137,8 +137,8 @@ void db_add_user(struct passwd *u) {
 	int num_fields = 0;*/
 	char *query;
 	char *msg;
-	msg = (char *)malloc(100*sizeof(char));
-	query = (char *) malloc(sizeof(char));
+	msg = (char*)malloc(100*sizeof(char));
+	query = (char*)malloc(200*sizeof(char));
 	sprintf(query, "insert into account_manager_db.user(login, password, home, shell, uid, gid) values('%s', '%s', '%s', '%s', %d, %d)", u->pw_name, u->pw_passwd, u->pw_dir, u->pw_shell, u->pw_uid, u->pw_gid);
 	mysql_query(&mysql, query);
 	/*if(NULL!=(result = mysql_store_result(&mysql))) {
@@ -155,7 +155,7 @@ void db_add_user(struct passwd *u) {
 
 void db_add_group(struct group *g) {
 	char *query;
-	query = (char *) malloc(sizeof(char));
+	query = (char*)malloc(200*sizeof(char));
 	sprintf(query, "insert into account_manager_db.group(name, gid) values('%s', %d)", g->gr_name, g->gr_gid);
 	printf("%s\n", query);
 	mysql_query(&mysql, query);
