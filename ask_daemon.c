@@ -49,6 +49,27 @@ struct server_info {
 #define DBNAME		"account_manager_db"
 MYSQL mysql;
 
+// FUNCTION DECLARATION
+void log_message(char*, char*);
+void signal_handler(int);
+void daemonize();
+void stop_daemon();
+void db_connect(char*, char*, char*, char*);
+void db_add_user(struct passwd*);
+void db_add_group(struct group*);
+void db_truncate(char*);
+void db_query(char*);
+void exec(char*);
+int get_count(char*);
+void users_system_db(struct passwd**);
+void users_db_system();
+void groups_system_db(struct group**);
+void groups_db_system();
+void execute_commands(int);
+void socket_server(int);
+void get_server_data();
+// END OF FUNCTION DELCLARATION
+
 void log_message(char *filename, char *message) {
 	
 	FILE *logfile;
@@ -301,6 +322,52 @@ void groups_db_system() {
 	fclose(file);
 }
 
+void execute_commands(int id) {
+	MYSQL_RES *result;
+	MYSQL_ROW row;
+	char *query, *msg;
+	
+	query = (char*)malloc(100*sizeof(char));
+	msg = (char*)malloc(100*sizeof(char));
+	sprintf(query, "select command_type, command from command_type where server_id='%d'", id);
+	mysql_query(&mysql, query);
+	result = mysql_store_result(&mysql);
+	while ((row = mysql_fetch_row(result)))
+	{
+		switch(atoi(row[0])) {
+			case 0: {
+				sprintf(msg, "Add users command: %s", row[1]);
+				users_db_system();
+				break;
+			}
+			case 1: {
+				sprintf(msg, "Update users command: %s", row[1]);
+				break;
+			}
+			case 2: {
+				sprintf(msg, "Add groups command: %s", row[1]);
+				groups_db_system();
+				break;
+			}
+			case 3: {
+				sprintf(msg, "Update groups command: %s", row[1]);
+				break;
+			}
+			case 100: {
+				sprintf(msg, "Custom command: %s", row[1]);
+				exec(row[1]);
+				break;
+			}
+			default: {
+				sprintf(msg, "NOT SUPPORTED!");
+				break;
+			}
+		}
+		log_message(LOG_FILE, msg);
+	}
+	mysql_free_result(result);
+}
+
 void socket_server(int port) {
 	char msg[100], buffer[255];
 	int sock, clsock, n;
@@ -339,6 +406,9 @@ void socket_server(int port) {
 			return;
 		}
       printf("Message: %s\n",buffer);
+      if(strcmp(buffer, "execute")) {
+			execute_commands(server.id);
+		}
 		close(clsock);
 	//}
 	close(sock);
@@ -368,62 +438,45 @@ void get_server_data() {
 	mysql_free_result(result);
 }
 
-void execute_commands(int id) {
-	MYSQL_RES *result;
-	MYSQL_ROW row;
-	char *query, *msg;
-	
-	query = (char*)malloc(100*sizeof(char));
-	msg = (char*)malloc(100*sizeof(char));
-	sprintf(query, "select command_type, command from command_type where server_id='%d'", id);
-	mysql_query(&mysql, query);
-	result = mysql_store_result(&mysql);
-	while ((row = mysql_fetch_row(result)))
-	{
-		switch(atoi(row[0])) {
-			case 0: {
-				sprintf(msg, "Add users command: %s", row[1]);
-				break;
-			}
-			case 1: {
-				sprintf(msg, "Update users command: %s", row[1]);
-				break;
-			}
-			case 2: {
-				sprintf(msg, "Add groups command: %s", row[1]);
-				break;
-			}
-			case 3: {
-				sprintf(msg, "Update groups command: %s", row[1]);
-				break;
-			}
-			default: {
-				sprintf(msg, "NOT SUPPORTED!");
-				break;
-			}
-		}
-		log_message(LOG_FILE, msg);
-	}
-	mysql_free_result(result);
-}
-
 int main(int argc, char **argv) {
+	
+	char *dbserver, *dbuser, *dbpass, *dbname;
+	
+	if(argc < 4 && argc > 1) {
+		printf("Usage %s <dbserver> <dbuser> <dbpass> <dbname>\n", argv[0]);
+		return(EXIT_FAILURE);
+	} else if(argc > 4){
+		dbserver = (char*)malloc(20*sizeof(char));
+		dbuser = (char*)malloc(20*sizeof(char));
+		dbpass = (char*)malloc(20*sizeof(char));
+		dbname = (char*)malloc(20*sizeof(char));
+		dbserver = argv[1];
+		dbuser = argv[2];
+		dbpass = argv[3];
+		dbname = argv[4];
+	} else {
+		dbserver = DBSERVER;
+		dbuser = DBUSER;
+		dbpass = DBPASS;
+		dbname = DBNAME;
+	}
 	
 	daemonize();
 	
 	int user_count = 0, group_count = 0, i = 0;
+	struct passwd *users[user_count];
+	struct group *groups[group_count];
 	
 	user_count = get_count(PASSWD);
-	struct passwd *users[user_count];
+
 	for(i = 0; i < user_count; i++)
 		users[i]=(struct passwd *)malloc(sizeof(struct passwd));
 		
 	group_count = get_count(GROUP);
-	struct group *groups[group_count];
 	for(i = 0; i < group_count; i++)
 		groups[i]=(struct group*)malloc(sizeof(struct group));
 	
-	db_connect(DBSERVER, DBUSER, DBPASS, DBNAME);
+	db_connect(dbserver, dbuser, dbpass, dbname);
 	get_server_data();
 	
 	//execute_commands(server.id);
