@@ -239,17 +239,18 @@ void users_db_system() {
 	}
 	struct passwd *u = NULL;
 	u=(struct passwd *)malloc(sizeof(struct passwd));
-	mysql_query(&mysql, "select distinct login, password, uid, gid, home, shell from user where uid not in (select uid from ign_user)");
+	mysql_query(&mysql, "select distinct login, password, uid, gid, home, shell, name, surname from user where uid not in (select uid from ign_user)");
 	result = mysql_store_result(&mysql);
 	while((row = mysql_fetch_row(result))) {
-		u->pw_name = row[0];
+		/*u->pw_name = row[0];
 		u->pw_passwd = row[1];
 		u->pw_uid = atoi(row[2]);
 		u->pw_gid = atoi(row[3]);
 		u->pw_dir = row[4];
-		u->pw_shell = row[5];
+		u->pw_shell = row[5];*/
 		//putpwent(u, file);
-		sprintf(cmd, "useradd -d %s -g %d -m -p %s -s %s -u %d %s", u->pw_dir, u->pw_gid, u->pw_passwd, u->pw_shell, u->pw_uid, u->pw_name);
+		//sprintf(cmd, "useradd -d %s -g %d -m -p %s -s %s -u %d %s", u->pw_dir, u->pw_gid, u->pw_passwd, u->pw_shell, u->pw_uid, u->pw_name);
+		sprintf(cmd, "useradd -d %s -g %s -m -p %s -s %s -u %s -c '%s %s' %s", row[4], row[3], row[1], row[5], row[2], row[6], row[7], row[0]);
 		exec(cmd);
 	}
 	fclose(file);
