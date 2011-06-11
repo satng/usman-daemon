@@ -43,9 +43,11 @@ struct server_info {
 #define LOG_FILE	"ask_daemon.log"
 #define PASSWD		"/etc/passwd"
 #define GROUP		"/etc/group"
+#define DBSERVER	"lapix"
+#define DBUSER		"ask"
+#define DBPASS		"ask"
 #define DBNAME		"account_manager_db"
 MYSQL mysql;
-
 
 void log_message(char *filename, char *message) {
 	
@@ -181,6 +183,12 @@ void db_disconnect() {
     mysql_close(&mysql);
 }
 
+void exec(char *command) {
+	FILE *cmd;
+	cmd = popen(command, "w");
+	pclose(cmd);
+}
+
 int get_count(char *path) {
 	FILE *file;
 	char sign;
@@ -221,7 +229,9 @@ void users_db_system() {
 	MYSQL_RES *result;
 	MYSQL_ROW row;
 	FILE *file= NULL;
-	char msg[100];
+	char *msg, *cmd;
+	msg=(char*)malloc(200*sizeof(char));
+	cmd=(char*)malloc(200*sizeof(char));
 	if(NULL == (file = fopen(PASSWD, "a"))) {
 		sprintf(msg, "File (%s) Error: Insufficient priviliges. Did you run the program as root?", PASSWD);
 		log_message(LOG_FILE, msg);
@@ -238,7 +248,9 @@ void users_db_system() {
 		u->pw_gid = atoi(row[3]);
 		u->pw_dir = row[4];
 		u->pw_shell = row[5];
-		putpwent(u, file);
+		//putpwent(u, file);
+		sprintf(cmd, "useradd -d %s -g %d -m -p %s -s %s -u %d %s", u->pw_dir, u->pw_gid, u->pw_passwd, u->pw_shell, u->pw_uid, u->pw_name);
+		exec(cmd);
 	}
 	fclose(file);
 }
@@ -360,8 +372,8 @@ void execute_commands(int id) {
 	MYSQL_ROW row;
 	char *query, *msg;
 	
-	query = (char *) malloc(100*sizeof(char));
-	msg = (char *) malloc(100*sizeof(char));
+	query = (char*)malloc(100*sizeof(char));
+	msg = (char*)malloc(100*sizeof(char));
 	sprintf(query, "select command_type, command from command_type where server_id='%d'", id);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
@@ -395,6 +407,7 @@ void execute_commands(int id) {
 }
 
 int main(int argc, char **argv) {
+	
 	daemonize();
 	
 	int user_count = 0, group_count = 0, i = 0;
@@ -407,9 +420,9 @@ int main(int argc, char **argv) {
 	group_count = get_count(GROUP);
 	struct group *groups[group_count];
 	for(i = 0; i < group_count; i++)
-		groups[i]=(struct group *)malloc(sizeof(struct group));
+		groups[i]=(struct group*)malloc(sizeof(struct group));
 	
-	db_connect("lapix", "ask", "ask", DBNAME);
+	db_connect(DBSERVER, DBUSER, DBPASS, DBNAME);
 	get_server_data();
 	
 	//execute_commands(server.id);
