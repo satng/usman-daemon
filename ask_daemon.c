@@ -1,6 +1,6 @@
 /*
  * 
- * ASKDaemon v0.0.2.0
+ * ASKDaemon v0.0.3.2
  * null@student.agh.edu.pl
  * 
  */
@@ -71,9 +71,10 @@ const int ITG_DEL		= 2;
 const int IGN_USER	= 0;
 const int IGN_GROUP 	= 1;
 /* SOCKET CONN */
-const int EXECUTE		= 0;
-const int IMPORT		= 1;
-const int QUIT			= 9;
+#define EXECUTE		0
+#define IMP_USR		1
+#define IMP_GRP		2
+#define QUIT			9
 
 // FUNCTION DECLARATION
 void log_message(char*, char*);
@@ -89,10 +90,10 @@ void exec(char*);
 int get_count(char*);
 void users_system_db();
 void users_db_system();
-void user_system_del(char*);
+void user_system_del(int);
 void groups_system_db();
 void group_system_mod(char*);
-void group_system_del(char*);
+void group_system_del(int);
 void groups_db_system();
 void execute_commands();
 void socket_server(int);
@@ -100,7 +101,9 @@ void get_server_data();
 // END OF FUNCTION DELCLARATION
 
 // TODO: send hashed passwords to db !
-// TODO: marking already executed commands ?
+// TODO: marking allready executed commands ?
+// ERROR: marking users/groups as integrated even if shell command fails !
+// TODO: modify user/group adding from db
 
 void log_message(char *filename, char *message) {
 	
@@ -266,11 +269,21 @@ void users_system_db() {
 	}
 }
 
-void user_system_del(char *name) {
-	char *cmd;
+void user_system_del(int user_id) {
+	MYSQL_RES *result;
+	MYSQL_ROW row;
+	char *query, *cmd;
 	cmd=(char*)malloc(100*sizeof(char));
-	sprintf(cmd, "userdel -f -r %s", name);
+	query=(char*)malloc(100*sizeof(char));
+	sprintf(query, "select login from %s.user where id=%d and integrity_status=%d", DBNAME, user_id, ITG_DEL);
+	printf("%s\n", query);
+	mysql_query(&mysql, query);
+	result = mysql_store_result(&mysql);
+	row = mysql_fetch_row(result);
+	sprintf(cmd, "userdel -f -r %s", row[0]);
 	exec(cmd);
+	sprintf(query, "delete from %s.user where id=%d", DBNAME, user_id);
+	mysql_query(&mysql, query);
 }
 
 void users_db_system() {
@@ -287,10 +300,9 @@ void users_db_system() {
 	result = mysql_store_result(&mysql);
 	while((row = mysql_fetch_row(result))) {
 		sprintf(cmd, "useradd -d %s -g %s -m -p %s -s %s -u %s -c '%s %s' %s", row[4], row[3], row[1], row[5], row[2], row[6], row[7], row[0]);
-		printf("%s\n", cmd); 
+		printf("%s\n", cmd);
 		exec(cmd);
 		sprintf(query, "update %s.user set integrity_status=%d where uid=%d", DBNAME, ITG_OK, atoi(row[2]));
-		printf("%s\n", query);
 		mysql_query(&mysql, query);
 	}
 	mysql_free_result(result);
@@ -311,11 +323,21 @@ void group_system_mod(char *name) {
 	exec(cmd);
 }
 
-void group_system_del(char *name) {
-	char *cmd;
-	cmd=(char*)malloc(20*sizeof(char));
-	sprintf(cmd, "groupdel %s", name);
+void group_system_del(int group_id) {
+	MYSQL_RES *result;
+	MYSQL_ROW row;
+	char *query, *cmd;
+	cmd=(char*)malloc(100*sizeof(char));
+	query=(char*)malloc(100*sizeof(char));
+	sprintf(query, "select name from %s.group where id=%d and integrity_status=%d", DBNAME, group_id, ITG_DEL);
+	printf("%s\n", query);
+	mysql_query(&mysql, query);
+	result = mysql_store_result(&mysql);
+	row = mysql_fetch_row(result);
+	sprintf(cmd, "groupdel %s", row[0]);
 	exec(cmd);
+	sprintf(query, "delete from %s.group where id=%d", DBNAME, group_id);
+	mysql_query(&mysql, query);
 }
 
 void groups_db_system() {
@@ -345,7 +367,8 @@ void execute_commands() {
 	
 	query = (char*)malloc(100*sizeof(char));
 	msg = (char*)malloc(100*sizeof(char));
-	sprintf(query, "select command_type, user_id, group_id, extra_arg from command where server_id='%d'", server.id);
+	sprintf(query, "select command_type, user_id, group_id, extra_arg from %s.command where command.server_id='%d'", DBNAME, server.id);
+	printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	while ((row = mysql_fetch_row(result)))
@@ -362,8 +385,8 @@ void execute_commands() {
 			}
 			case 3: {
 				sprintf(msg, "USER_DEL");
-				if(row[1] != NULL) 
-					user_system_del(row[1]);
+				if(row[1] != NULL)
+					user_system_del(atoi(row[1]));
 				break;
 			}
 			case 4: {
@@ -386,7 +409,7 @@ void execute_commands() {
 			case 13: {
 				sprintf(msg, "GROUP_DEL");
 				if(row[2] != NULL)
-					group_system_del(row[2]);
+					group_system_del(atoi(row[2]));
 				break;
 			}
 			case 101: {
@@ -406,7 +429,7 @@ void execute_commands() {
 
 void socket_server(int port) {
 	char msg[100], buffer[255];
-	int sock, clsock, n;
+	int sock, clsock, n, soc_cmd = -1;
 	socklen_t clilen;
 	struct sockaddr_in serv_addr, cli_addr;
 	
@@ -425,7 +448,7 @@ void socket_server(int port) {
 		return;
 	}
 	
-	while(atoi(buffer)!=QUIT) {
+	while(soc_cmd!=QUIT) {
 		listen(sock, 10);
 		clilen = sizeof(cli_addr);
 		clsock = accept(sock, (struct sockaddr *) &cli_addr, &clilen);
@@ -441,14 +464,22 @@ void socket_server(int port) {
 			log_message(LOG_FILE, msg);
 			return;
 		}
-      //printf("Message: %d\n", atoi(buffer));
-      if(atoi(buffer) == EXECUTE) {
-			// wykonaj komendy
-			execute_commands();
-		} else if(atoi(buffer) == IMPORT) {
-			// importuj z systemu
-			groups_system_db();
-			users_system_db();
+		soc_cmd = atoi(buffer);
+      printf("Message: %d\n", atoi(buffer));
+      switch(soc_cmd) {
+			case 0: {
+				printf("execute\n");
+				execute_commands();
+				break;
+			}
+			case 1: {
+				users_system_db();
+				break;
+			}
+			case 2: {
+				groups_system_db();
+				break;
+			}
 		}
 		close(clsock);
 	}
