@@ -38,16 +38,42 @@ struct group {
 struct server_info {
 	int id; char *hostname; int port;
 } server;
-#define RUNNING_DIR	"/tmp"
-#define LOCK_FILE	"ask_daemon.lock"
-#define LOG_FILE	"ask_daemon.log"
-#define PASSWD		"/etc/passwd"
-#define GROUP		"/etc/group"
-#define DBSERVER	"lapix"
-#define DBUSER		"ask"
-#define DBPASS		"ask"
-#define DBNAME		"account_manager_db"
 MYSQL mysql;
+/* DAEMON */
+#define RUNNING_DIR	"/tmp"
+#define LOCK_FILE		"ask_daemon.lock"
+#define LOG_FILE		"ask_daemon.log"
+/* SYSTEM */
+#define PASSWD			"/etc/passwd"
+#define GROUP			"/etc/group"
+/* DATABASE */
+#define DBSERVER		"lapix"
+#define DBUSER			"ask"
+#define DBPASS			"ask"
+#define DBNAME			"usman"
+/* USER COMMANDS */
+#define USER_ADD		1;
+#define USER_MOD 		2;
+#define USER_DEL		3;
+#define USER_PASS		4;
+#define USER_QUOTA	5; 
+/* GROUP COMMANDS */
+#define GROUP_ADD		11;
+#define GROUP_MOD		12;
+#define GROUP_DEL 	13;
+/* CUSTOM */
+#define CUSTOM_CMD 	101;
+/* INTEGRITY */
+const int ITG_NONE 	= 0;
+const int ITG_OK 	 	= 1;
+const int ITG_DEL		= 2;
+/* IGNORED */
+const int IGN_USER	= 0;
+const int IGN_GROUP 	= 1;
+/* SOCKET CONN */
+const int EXECUTE		= 0;
+const int IMPORT		= 1;
+const int QUIT			= 9;
 
 // FUNCTION DECLARATION
 void log_message(char*, char*);
@@ -61,14 +87,20 @@ void db_truncate(char*);
 void db_query(char*);
 void exec(char*);
 int get_count(char*);
-void users_system_db(struct passwd**);
+void users_system_db();
 void users_db_system();
-void groups_system_db(struct group**);
+void user_system_del(char*);
+void groups_system_db();
+void group_system_mod(char*);
+void group_system_del(char*);
 void groups_db_system();
-void execute_commands(int);
+void execute_commands();
 void socket_server(int);
 void get_server_data();
 // END OF FUNCTION DELCLARATION
+
+// TODO: send hashed passwords to db !
+// TODO: marking already executed commands ?
 
 void log_message(char *filename, char *message) {
 	
@@ -159,17 +191,16 @@ void db_connect(char *host, char *login, char *pass, char *dbase) {
 
 void db_add_user(struct passwd *u) {
 	char *query;
-	char *msg;
-	msg = (char*)malloc(100*sizeof(char));
 	query = (char*)malloc(200*sizeof(char));
-	sprintf(query, "insert into user(login, password, home, shell, uid, gid) values('%s', '%s', '%s', '%s', %d, %d)", u->pw_name, u->pw_passwd, u->pw_dir, u->pw_shell, u->pw_uid, u->pw_gid);
+	sprintf(query, "insert into %s.user(login, password, home, shell, uid, server_id, group_id, integrity_status) values('%s', '%s', '%s', '%s', %d, %d, 1, %d)", DBNAME, u->pw_name, u->pw_passwd, u->pw_dir, u->pw_shell, u->pw_uid, server.id, ITG_OK);
+	printf("%s\n", query);
 	mysql_query(&mysql, query);
 }
 
 void db_add_group(struct group *g) {
 	char *query;
 	query = (char*)malloc(200*sizeof(char));
-	sprintf(query, "insert into group(name, gid) values('%s', %d)", g->gr_name, g->gr_gid);
+	sprintf(query, "insert into %s.group(name, gid, integrity_status) values('%s', %d, %d)", DBNAME, g->gr_name, g->gr_gid, ITG_OK);
 	printf("%s\n", query);
 	mysql_query(&mysql, query);
 }
@@ -207,6 +238,8 @@ void db_disconnect() {
 void exec(char *command) {
 	FILE *cmd;
 	cmd = popen(command, "w");
+	if(cmd == NULL)
+		printf("FILE IS NULL\n");
 	pclose(cmd);
 }
 
@@ -225,137 +258,140 @@ int get_count(char *path) {
 	return c;
 }
 
-void users_system_db(struct passwd **us) {		
-	MYSQL_RES *result;
-	int num_rows;
-	char *query;
+void users_system_db() {		
    struct passwd *u = NULL;
-
-	//db_truncate("account_manager_db.user");
-	query = (char*)malloc(100*sizeof(char));
 	while((u = getpwent()) != NULL)
 	{
-		sprintf(query, "select * from ign_user where uid='%d'", u->pw_uid);
-		mysql_query(&mysql, query);
-		result = mysql_store_result(&mysql);
-		num_rows = mysql_num_rows(result);
-		if(num_rows == 0) {
-			db_add_user(u);
-		}
-		mysql_free_result(result);
+		db_add_user(u);
 	}
+}
+
+void user_system_del(char *name) {
+	char *cmd;
+	cmd=(char*)malloc(100*sizeof(char));
+	sprintf(cmd, "userdel -f -r %s", name);
+	exec(cmd);
 }
 
 void users_db_system() {
 	MYSQL_RES *result;
 	MYSQL_ROW row;
-	FILE *file= NULL;
-	char *msg, *cmd;
-	msg=(char*)malloc(200*sizeof(char));
+	char *cmd, *query;
 	cmd=(char*)malloc(200*sizeof(char));
-	if(NULL == (file = fopen(PASSWD, "a"))) {
-		sprintf(msg, "File (%s) Error: Insufficient priviliges. Did you run the program as root?", PASSWD);
-		log_message(LOG_FILE, msg);
-		stop_daemon();
-	}
+	query=(char*)malloc(300*sizeof(char));
 	struct passwd *u = NULL;
 	u=(struct passwd *)malloc(sizeof(struct passwd));
-	mysql_query(&mysql, "select distinct login, password, uid, gid, home, shell, name, surname from user where uid not in (select uid from ign_user)");
+	sprintf(query, "select distinct login, password, uid, group.gid, home, shell, user.name, surname from %s.user, %s.group where user.integrity_status=%d and group.id=user.group_id and user.name not in (select name from %s.ignored_name where server_id=%d and type=%d)", DBNAME, DBNAME, ITG_NONE, DBNAME, server.id, IGN_USER);
+	printf("%s\n", query);
+	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	while((row = mysql_fetch_row(result))) {
-		/*u->pw_name = row[0];
-		u->pw_passwd = row[1];
-		u->pw_uid = atoi(row[2]);
-		u->pw_gid = atoi(row[3]);
-		u->pw_dir = row[4];
-		u->pw_shell = row[5];*/
-		//putpwent(u, file);
-		//sprintf(cmd, "useradd -d %s -g %d -m -p %s -s %s -u %d %s", u->pw_dir, u->pw_gid, u->pw_passwd, u->pw_shell, u->pw_uid, u->pw_name);
 		sprintf(cmd, "useradd -d %s -g %s -m -p %s -s %s -u %s -c '%s %s' %s", row[4], row[3], row[1], row[5], row[2], row[6], row[7], row[0]);
+		printf("%s\n", cmd); 
 		exec(cmd);
+		sprintf(query, "update %s.user set integrity_status=%d where uid=%d", DBNAME, ITG_OK, atoi(row[2]));
+		printf("%s\n", query);
+		mysql_query(&mysql, query);
 	}
-	fclose(file);
+	mysql_free_result(result);
 }
 
-void groups_system_db(struct group **gr) {
-	MYSQL_RES *result;
-	int num_rows;
-	char *query;
+void groups_system_db() {
 	struct group *g = NULL;
-
-	//db_truncate("account_manager_db.group");
-	query = (char*)malloc(100*sizeof(char));
 	while((g = getgrent()) != NULL)
 	{
-		sprintf(query, "select * from ign_group where gid='%d'", g->gr_gid);
-		mysql_query(&mysql, query);
-		result = mysql_store_result(&mysql);
-		num_rows = mysql_num_rows(result);
-		if(num_rows == 0) {
-			db_add_group(g);
-		}
-		mysql_free_result(result);
+		db_add_group(g);
 	}
+}
+
+void group_system_mod(char *name) {
+	char *cmd;
+	cmd=(char*)malloc(50*sizeof(char));
+	//sprintf(cmd, "groupmod -g %d -a %s -p %s", gid, name, pass);
+	exec(cmd);
+}
+
+void group_system_del(char *name) {
+	char *cmd;
+	cmd=(char*)malloc(20*sizeof(char));
+	sprintf(cmd, "groupdel %s", name);
+	exec(cmd);
 }
 
 void groups_db_system() {
 	MYSQL_RES *result;
 	MYSQL_ROW row;
-	FILE *file= NULL;
-	char msg[100];
-	if(NULL == (file = fopen(GROUP, "a"))) {
-		sprintf(msg, "File (%s) Error: Insufficient priviliges. Did you run the program as root?", GROUP);
-		log_message(LOG_FILE, msg);
-		printf("%s\n", msg);
-		stop_daemon();
-	}
+	char *cmd, *query;
+	cmd=(char*)malloc(200*sizeof(char));
+	query=(char*)malloc(200*sizeof(char));
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
-	mysql_query(&mysql, "select distinct name, gid from group where gid not in (select gid from ign_group)");
+	sprintf(query, "select distinct gid, name from %s.group where integrity_status=%d and name not in (select name from %s.ignored_name where server_id=%d and type=%d)", DBNAME, ITG_NONE, DBNAME, server.id, IGN_GROUP);
+	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	while((row = mysql_fetch_row(result))) {
-		g->gr_name = row[0];
-		g->gr_passwd = strdup("x");
-		g->gr_gid = atoi(row[1]);
-		putgrent(g, file);
+		sprintf(cmd, "groupadd -g %d %s", atoi(row[0]), row[1]);
+		exec(cmd);
+		sprintf(query, "update %s.group set integrity_status=%d", DBNAME, ITG_OK);
+		mysql_query(&mysql, query);
 	}
-	fclose(file);
+	mysql_free_result(result);
 }
 
-void execute_commands(int id) {
+void execute_commands() {
 	MYSQL_RES *result;
 	MYSQL_ROW row;
 	char *query, *msg;
 	
 	query = (char*)malloc(100*sizeof(char));
 	msg = (char*)malloc(100*sizeof(char));
-	sprintf(query, "select command_type, command from command_type where server_id='%d'", id);
+	sprintf(query, "select command_type, user_id, group_id, extra_arg from command where server_id='%d'", server.id);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	while ((row = mysql_fetch_row(result)))
 	{
 		switch(atoi(row[0])) {
-			case 0: {
-				sprintf(msg, "Add users command: %s", row[1]);
+			case 1: {
+				sprintf(msg, "USER_ADD");
 				users_db_system();
 				break;
 			}
-			case 1: {
-				sprintf(msg, "Update users command: %s", row[1]);
-				break;
-			}
 			case 2: {
-				sprintf(msg, "Add groups command: %s", row[1]);
-				groups_db_system();
+				sprintf(msg, "USER_MOD");
 				break;
 			}
 			case 3: {
-				sprintf(msg, "Update groups command: %s", row[1]);
+				sprintf(msg, "USER_DEL");
+				if(row[1] != NULL) 
+					user_system_del(row[1]);
 				break;
 			}
-			case 100: {
-				sprintf(msg, "Custom command: %s", row[1]);
-				exec(row[1]);
+			case 4: {
+				sprintf(msg, "USER_PASS");
+				break;
+			}
+			case 5: {
+				sprintf(msg, "USER_QUOTA");
+				break;
+			}
+			case 11: {
+				sprintf(msg, "GROUP_ADD");
+				groups_db_system();
+				break;
+			}
+			case 12: {
+				sprintf(msg, "GROUP_MOD");
+				break;
+			}
+			case 13: {
+				sprintf(msg, "GROUP_DEL");
+				if(row[2] != NULL)
+					group_system_del(row[2]);
+				break;
+			}
+			case 101: {
+				sprintf(msg, "CUSTOM_CMD");
+				exec(row[3]);
 				break;
 			}
 			default: {
@@ -389,7 +425,7 @@ void socket_server(int port) {
 		return;
 	}
 	
-	//while(true) {
+	while(atoi(buffer)!=QUIT) {
 		listen(sock, 10);
 		clilen = sizeof(cli_addr);
 		clsock = accept(sock, (struct sockaddr *) &cli_addr, &clilen);
@@ -405,12 +441,17 @@ void socket_server(int port) {
 			log_message(LOG_FILE, msg);
 			return;
 		}
-      printf("Message: %s\n",buffer);
-      if(strcmp(buffer, "execute")) {
-			execute_commands(server.id);
+      //printf("Message: %d\n", atoi(buffer));
+      if(atoi(buffer) == EXECUTE) {
+			// wykonaj komendy
+			execute_commands();
+		} else if(atoi(buffer) == IMPORT) {
+			// importuj z systemu
+			groups_system_db();
+			users_system_db();
 		}
 		close(clsock);
-	//}
+	}
 	close(sock);
 }
 
@@ -418,8 +459,6 @@ void get_server_data() {
 	MYSQL_RES *result;
 	MYSQL_ROW row;
 	char *query;
-	//int num_fields;
-	
 	server.hostname = (char*)malloc(45*sizeof(char));
 	gethostname(server.hostname, 45*sizeof(char));
 	query = (char *) malloc(200*sizeof(char));
@@ -429,12 +468,6 @@ void get_server_data() {
 	row = mysql_fetch_row(result);
 	server.id = atoi(row[0]);
 	server.port = atoi(row[1]);
-	//num_fields = mysql_num_fields(result);
-	/*while ((row = mysql_fetch_row(result)))
-	{
-		server.id = atoi(row[0]);
-		server.port = atoi(row[1]);
-	}*/
 	mysql_free_result(result);
 }
 
@@ -461,36 +494,15 @@ int main(int argc, char **argv) {
 		dbname = DBNAME;
 	}
 	
-	daemonize();
-	
-	int user_count = 0, group_count = 0, i = 0;
-	struct passwd *users[user_count];
-	struct group *groups[group_count];
-	
-	user_count = get_count(PASSWD);
-
-	for(i = 0; i < user_count; i++)
-		users[i]=(struct passwd *)malloc(sizeof(struct passwd));
-		
-	group_count = get_count(GROUP);
-	for(i = 0; i < group_count; i++)
-		groups[i]=(struct group*)malloc(sizeof(struct group));
+	//daemonize();	
 	
 	db_connect(dbserver, dbuser, dbpass, dbname);
 	get_server_data();
-	
-	//execute_commands(server.id);
-	//printf("%d, %s, %d\n", server.id, server.hostname, server.port);
-	//socket_server(server.port);
-	
-	//users_system_db(users);
-	//groups_system_db(groups);
-	//users_db_system();
-	//groups_db_system();
+	socket_server(server.port);
 	
 	db_disconnect();
-	
 	stop_daemon();
+	
 	return 0;
 }
 
