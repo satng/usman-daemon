@@ -104,8 +104,7 @@ void get_server_data();
 
 // TODO: send hashed passwords to db !
 // TODO: marking allready executed commands ?
-// ERROR: marking users/groups as integrated even if shell command fails !
-// TODO: modify user/group adding from db
+// ERROR: marking users/groups as integrated even if shell command fails !?
 
 void log_message(char *filename, char *message) {
 	
@@ -617,13 +616,11 @@ int main(int argc, char **argv) {
 		dbname = DBNAME;
 	}
 	
-	//daemonize();	
+	daemonize();	
 	
 	db_connect(dbserver, dbuser, dbpass, dbname);
 	get_server_data();
 	socket_server(server.port);
-	
-	//user_system_mod(216);
 	
 	db_disconnect();
 	stop_daemon();
