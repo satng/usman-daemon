@@ -328,7 +328,7 @@ void user_db_system(int user_id) {
 	row = mysql_fetch_row(result);
 	sprintf(cmd, "useradd -p %s -u %s -g %s -d %s -s %s -c '%s %s %s' -m %s", row[1], row[2], row[3], row[4], row[5], row[6] ? row[6] : "", row[7] ? row[7] : "", row[8] ? row[8] : "", row[0]);
 	exec(cmd);
-	sprintf(query, "update %s.user set integrity_status=%d where id=%d", DBNAME, ITG_NONE, user_id); // TUTAJ NA ITG_OK
+	sprintf(query, "update %s.user set integrity_status=%d where id=%d", DBNAME, ITG_OK, user_id);
 	mysql_query(&mysql, query);
 	mysql_free_result(result);
 	free(query); free(cmd);
