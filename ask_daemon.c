@@ -102,8 +102,6 @@ void socket_server(int);
 void get_server_data();
 // END OF FUNCTION DELCLARATION
 
-// TODO: send hashed passwords to db !
-// TODO: marking allready executed commands ?
 // ERROR: marking users/groups as integrated even if shell command fails !?
 
 void log_message(char *filename, char *message) {
@@ -288,7 +286,7 @@ void user_system_mod(int user_id) {
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	if((row=mysql_fetch_row(result))) {
-		printf("%s\n", query);
+		//printf("%s\n", query);
 		sprintf(cmd, "usermod -p %s -u %s -g %s -d %s -s %s -c '%s %s %s' -m %s", row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[0]);
 		exec(cmd);
 		sprintf(query, "update %s.user set integrity_status=%d where id=%d", DBNAME, ITG_OK, user_id);
@@ -305,7 +303,7 @@ void user_system_del(int user_id) {
 	cmd=(char*)malloc(100*sizeof(char));
 	query=(char*)malloc(100*sizeof(char));
 	sprintf(query, "select login from %s.user where id=%d and integrity_status=%d", DBNAME, user_id, ITG_DEL);
-	printf("%s\n", query);
+	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	row = mysql_fetch_row(result);
@@ -328,11 +326,12 @@ void user_db_system(int user_id) {
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	row = mysql_fetch_row(result);
-	sprintf(cmd, "useradd -p %s -u %s -g %s -d %s -s %s -c '%s %s %s' -m %s", row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[0]);
+	sprintf(cmd, "useradd -p %s -u %s -g %s -d %s -s %s -c '%s %s %s' -m %s", row[1], row[2], row[3], row[4], row[5], row[6] ? row[6] : "", row[7] ? row[7] : "", row[8] ? row[8] : "", row[0]);
 	exec(cmd);
-	sprintf(query, "update %s.user set integrity_status=%d where id=%d", DBNAME, ITG_OK, user_id);
+	sprintf(query, "update %s.user set integrity_status=%d where id=%d", DBNAME, ITG_NONE, user_id); // TUTAJ NA ITG_OK
 	mysql_query(&mysql, query);
 	mysql_free_result(result);
+	free(query); free(cmd);
 }
 
 void users_db_system(int user_id) {
@@ -374,7 +373,7 @@ void group_system_mod(int group_id) {
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
 	sprintf(query, "select gid, name from %s.group where id=%d and integrity_status=%d", DBNAME, group_id, ITG_NONE);
-	printf("%s\n", query);
+	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	if((row = mysql_fetch_row(result))) {
@@ -394,7 +393,7 @@ void group_system_del(int group_id) {
 	cmd=(char*)malloc(100*sizeof(char));
 	query=(char*)malloc(100*sizeof(char));
 	sprintf(query, "select name from %s.group where id=%d and integrity_status=%d", DBNAME, group_id, ITG_DEL);
-	printf("%s\n", query);
+	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	row = mysql_fetch_row(result);
@@ -413,7 +412,7 @@ void group_db_system(int group_id) {
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
 	sprintf(query, "select gid, name from %s.group where id=%d and integrity_status=%d", DBNAME, group_id, ITG_NONE);
-	printf("%s\n", query);
+	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	row = mysql_fetch_row(result);
@@ -433,7 +432,7 @@ void groups_db_system(int group_id) {
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
 	sprintf(query, "select distinct gid, name from %s.group where integrity_status=%d and name not in (select name from %s.ignored_name where server_id=%d and type=%d)", DBNAME, ITG_NONE, DBNAME, server.id, IGN_GROUP);
-	printf("%s\n", query);
+	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	while((row = mysql_fetch_row(result))) {
@@ -449,11 +448,10 @@ void execute_commands() {
 	MYSQL_RES *result;
 	MYSQL_ROW row;
 	char *query, *msg;
-	
 	query = (char*)malloc(200*sizeof(char));
 	msg = (char*)malloc(100*sizeof(char));
-	sprintf(query, "select command_type, user_id, group_id, extra_arg from %s.command where command.server_id='%d'", DBNAME, server.id);
-	printf("%s\n", query);
+	sprintf(query, "select command_type, user_id, group_id, extra_arg, id from %s.command where command.server_id='%d'", DBNAME, server.id);
+	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	while ((row = mysql_fetch_row(result)))
@@ -514,8 +512,12 @@ void execute_commands() {
 			}
 		}
 		log_message(LOG_FILE, msg);
+		sprintf(query, "delete from %s.command where id=%s", DBNAME, row[4]);
+		//printf("%s\n", query);
+		mysql_query(&mysql, query);
 	}
 	mysql_free_result(result);
+	free(query); free(msg);
 }
 
 void socket_server(int port) {
@@ -556,10 +558,9 @@ void socket_server(int port) {
 			return;
 		}
 		soc_cmd = atoi(buffer);
-      printf("Message: %d\n", atoi(buffer));
+      //printf("Message: %d\n", atoi(buffer));
       switch(soc_cmd) {
 			case 0: {
-				printf("execute\n");
 				execute_commands();
 				break;
 			}
@@ -621,7 +622,6 @@ int main(int argc, char **argv) {
 	db_connect(dbserver, dbuser, dbpass, dbname);
 	get_server_data();
 	socket_server(server.port);
-	
 	db_disconnect();
 	stop_daemon();
 	
