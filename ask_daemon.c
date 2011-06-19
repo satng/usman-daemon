@@ -306,18 +306,28 @@ void users_system_db() {
 	MYSQL_RES *result;
 	MYSQL_ROW row;
 	char *query;
+	int ign_count, usr_count;
 	query=(char*)malloc(300*sizeof(char));
    struct passwd *u = NULL;
 	while((u = getpwent()) != NULL)
 	{
-		sprintf(query, "select count(*) from %s.ignored_name where name='%s'", DBNAME, u->pw_name);
+		sprintf(query, "select count(*) from %s.user where uid=%d", DBNAME, u->pw_uid);
 		mysql_query(&mysql, query);
 		result = mysql_store_result(&mysql);
 		row = mysql_fetch_row(result);
-		if(atoi(row[0]) == 0) {
-			db_add_user(u);
+		usr_count = atoi(row[0]);
+		if(usr_count == 0) {
+			sprintf(query, "select count(*) from %s.ignored_name where name='%s'", DBNAME, u->pw_name);
+			mysql_query(&mysql, query);
+			result = mysql_store_result(&mysql);
+			row = mysql_fetch_row(result);
+			ign_count = atoi(row[0]);
+			if(ign_count == 0) {
+				db_add_user(u);
+			}
 		}
 	}
+	endpwent();
 	mysql_free_result(result);
 	free(query);
 }
@@ -389,12 +399,12 @@ void users_db_system(int user_id) {
 	struct passwd *u = NULL;
 	u=(struct passwd *)malloc(sizeof(struct passwd));
 	sprintf(query, "select distinct login, password, uid, group.gid, home, shell, user.name, surname from %s.user, %s.group where server_id=%d and user.integrity_status=%d and group.id=user.group_id and user.name not in (select name from %s.ignored_name where server_id=%d and type=%d)", DBNAME, DBNAME, server.id, ITG_NONE, DBNAME, server.id, IGN_USER);
-	printf("%s\n", query);
+	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	while((row = mysql_fetch_row(result))) {
 		sprintf(cmd, "useradd -d %s -g %s -m -p %s -s %s -u %s -c '%s %s' %s", row[4], row[3], row[1], row[5], row[2], row[6], row[7], row[0]);
-		printf("%s\n", cmd);
+		//printf("%s\n", cmd);
 		exec(cmd);
 		sprintf(query, "update %s.user set integrity_status=%d where uid=%d", DBNAME, ITG_OK, atoi(row[2]));
 		mysql_query(&mysql, query);
@@ -406,18 +416,29 @@ void groups_system_db() {
 	MYSQL_RES *result;
 	MYSQL_ROW row;
 	char *query;
+	int ign_count, gr_count;
 	query=(char*)malloc(300*sizeof(char));
 	struct group *g = NULL;
-	while((g = getgrent()) != NULL)
-	{
-		sprintf(query, "select count(*) from %s.ignored_name where name='%s'", DBNAME, g->gr_name);
+	while((g = getgrent()) != NULL) {
+		sprintf(query, "select count(*) from %s.group where gid=%d", DBNAME, g->gr_gid);
+		//printf("%s\n", query);
 		mysql_query(&mysql, query);
 		result = mysql_store_result(&mysql);
 		row = mysql_fetch_row(result);
-		if(atoi(row[0]) == 0) {
-			db_add_group(g);
+		gr_count = atoi(row[0]);
+		if(gr_count == 0) {
+			sprintf(query, "select count(*) from %s.ignored_name where name='%s'", DBNAME, g->gr_name);
+			//printf("%s\n", query);
+			mysql_query(&mysql, query);
+			result = mysql_store_result(&mysql);
+			row = mysql_fetch_row(result);
+			ign_count = atoi(row[0]);
+			if(ign_count == 0) {
+				db_add_group(g);
+			}
 		}
 	}
+	endgrent();
 	mysql_free_result(result);
 	free(query);
 }
@@ -431,7 +452,7 @@ void group_system_mod(int group_id) {
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
 	sprintf(query, "select gid, name from %s.group where id=%d and server_id=%d and integrity_status=%d", DBNAME, group_id, server.id, ITG_NONE);
-	printf("%s\n", query);
+	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	if((row = mysql_fetch_row(result))) {
@@ -470,7 +491,7 @@ void group_db_system(int group_id) {
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
 	sprintf(query, "select gid, name from %s.group where id=%d and server_id=%d and integrity_status=%d", DBNAME, group_id, server.id, ITG_NONE);
-	printf("%s\n", query);
+	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	row = mysql_fetch_row(result);
@@ -579,7 +600,7 @@ void execute_commands() {
 }
 
 void socket_server(int port) {
-	char msg[100], buffer[1];
+	char msg[100], buffer[2];
 	int sock, clsock, n, soc_cmd = -1;
 	socklen_t clilen;
 	struct sockaddr_in serv_addr, cli_addr;
@@ -600,7 +621,7 @@ void socket_server(int port) {
 	}
 	
 	while(soc_cmd!=QUIT) {
-		listen(sock, 10);
+		listen(sock, 255);
 		clilen = sizeof(cli_addr);
 		clsock = accept(sock, (struct sockaddr *) &cli_addr, &clilen);
 		if(clsock < 0) {
@@ -608,21 +629,23 @@ void socket_server(int port) {
 			log_message(LOG_FILE, msg);
 			return;
 		}
-		bzero(buffer,1);
-		n = read(clsock,buffer,1);
+		bzero(buffer, 1);
+		n = read(clsock,&buffer,sizeof(buffer));
       if (n < 0) {
 			sprintf(msg, "ERROR: Some problems while reading from socket!");
 			log_message(LOG_FILE, msg);
 			return;
 		}
 		soc_cmd = atoi(buffer);
-      //printf("Message: %d\n", atoi(buffer));
+      //printf("Message: %d\n", soc_cmd);
       switch(soc_cmd) {
 			case 0: {
+				log_message(LOG_FILE, "Fetched 'EXECUTE' command.");
 				execute_commands();
 				break;
 			}
 			case 1: {
+				log_message(LOG_FILE, "Fetched 'IMPORT' command.");
 				groups_system_db();
 				users_system_db();
 				break;
@@ -672,7 +695,7 @@ int main(int argc, char **argv) {
 		dbname = DBNAME;
 	}
 	
-	//daemonize();	
+	daemonize();	
 	
 	db_connect(dbserver, dbuser, dbpass, dbname);
 	get_server_data();
