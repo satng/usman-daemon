@@ -145,21 +145,43 @@ void daemonize() {
 	
 	int lfp;
 	char str[10];
+	char *msg;
+	msg=(char*)malloc(50*sizeof(char));
 	
 	if(getppid() == 1) return; // juz daemon
 	
-	if(daemon(1,0) < 0) exit(-1);
+	if(daemon(1,0) < 0) {
+		log_message(LOG_FILE, "Error while trying to run the daemon in background!");
+		exit(-1);
+	 }
 
 	umask(027); // prawa dostepu do plikow / 750
 
-	chdir(RUNNING_DIR); // zmiana sciezki roboczej
+	if(chdir(RUNNING_DIR) < 0) { // zmiana sciezki roboczej
+		sprintf(msg, "Error while changing working directory to: %s!", RUNNING_DIR);
+		log_message(LOG_FILE, msg);
+		exit(-1);
+	}
 
 	lfp = open(LOCK_FILE,O_RDWR|O_CREAT,0640);
-	if (lfp < 0) exit(-2); // blad uchwytu
-	if (lockf(lfp,F_TLOCK,0) < 0) exit(-3); // blad blokady
+	if (lfp < 0) { // blad uchwytu
+		sprintf(msg, "Error while creating lock file: %s!", LOCK_FILE);
+		log_message(LOG_FILE, msg);
+		exit(-1); 
+	} 
+	
+	if (lockf(lfp,F_TLOCK,0) < 0) { // blad blokady
+		sprintf(msg, "Error while locking the file: %s", LOCK_FILE);
+		log_message(LOG_FILE, msg);
+		exit(-1);
+	}
 
 	sprintf(str,"%d\n",getpid());
-	write(lfp,str,strlen(str)); // zapis pid
+	if(write(lfp,str,strlen(str)) < 0) { // zapis pid
+		sprintf(msg, "Error while writing pid to lock file: %s", LOCK_FILE);
+		log_message(LOG_FILE, msg);
+		exit(-1);
+	}
 	
 	// Obsluga sygnalow / ignorowanie
 	signal(SIGCHLD,SIG_IGN); // zatrzymanie potomka
@@ -168,6 +190,8 @@ void daemonize() {
 	signal(SIGTTIN,SIG_IGN); // wejscie tty
 	signal(SIGHUP,signal_handler); // przechwyt hup
 	signal(SIGTERM,signal_handler); // przechwyt term
+	
+	free(msg);
 
 	log_message(LOG_FILE,"ASKDaemon Start");
 }
@@ -189,6 +213,7 @@ void db_connect(char *host, char *login, char *pass, char *dbase) {
 			log_message(LOG_FILE, msg);
 		}
 	}
+	free(msg);
 }
 
 void db_add_user(struct passwd *u) {
@@ -205,6 +230,7 @@ void db_add_user(struct passwd *u) {
 	sprintf(query, "insert into %s.user(login, password, home, shell, uid, server_id, group_id, integrity_status) values('%s', '%s', '%s', '%s', %d, %d, %d, %d)", DBNAME, u->pw_name, u->pw_passwd, u->pw_dir, u->pw_shell, u->pw_uid, server.id, group_id, ITG_OK);
 	printf("%s\n", query);
 	mysql_query(&mysql, query);
+	free(query);
 }
 
 void db_add_group(struct group *g) {
@@ -213,6 +239,7 @@ void db_add_group(struct group *g) {
 	sprintf(query, "insert into %s.group(name, gid, server_id, integrity_status) values('%s', %d, %d, %d)", DBNAME, g->gr_name, g->gr_gid, server.id, ITG_OK);
 	printf("%s\n", query);
 	mysql_query(&mysql, query);
+	free(query);
 }
 
 void db_truncate(char *table) {
@@ -249,22 +276,29 @@ void exec(char *command) {
 	FILE *cmd;
 	cmd = popen(command, "w");
 	if(cmd == NULL)
-		printf("FILE IS NULL\n");
+		log_message(LOG_FILE, "Error: File is NULL! Probably trying to execute wrong command!");
 	pclose(cmd);
 }
 
 int get_count(char *path) {
 	FILE *file;
 	char sign;
+	char *msg;
 	int c = 0;
 		
+	msg=(char*)malloc(50*sizeof(char));
 	file = fopen(path, "r");
-    if (file == NULL) exit(EXIT_FAILURE);
-    while((sign=getc(file))!=EOF) 
-    {
+   if (file == NULL) {
+		sprintf(msg, "Error: No such file: %s", path);
+		log_message(LOG_FILE, msg);
+		exit(EXIT_FAILURE);
+	}
+   while((sign=getc(file))!=EOF) 
+   {
 		if(sign == '\n') c++;
 	}
 	fclose(file);
+	free(msg);
 	return c;
 }
 
