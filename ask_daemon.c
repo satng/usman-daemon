@@ -431,7 +431,7 @@ void groups_db_system(int group_id) {
 	query=(char*)malloc(200*sizeof(char));
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
-	sprintf(query, "select distinct gid, name from %s.group where integrity_status=%d and name not in (select name from %s.ignored_name where server_id=%d and type=%d)", DBNAME, ITG_NONE, DBNAME, server.id, IGN_GROUP);
+	sprintf(query, "select distinct gid, name from %s.group where server_id=%d and integrity_status=%d and name not in (select name from %s.ignored_name where server_id=%d and type=%d)", DBNAME, server.id, ITG_NONE, DBNAME, server.id, IGN_GROUP);
 	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
