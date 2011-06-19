@@ -303,11 +303,23 @@ int get_count(char *path) {
 }
 
 void users_system_db() {
+	MYSQL_RES *result;
+	MYSQL_ROW row;
+	char *query;
+	query=(char*)malloc(300*sizeof(char));
    struct passwd *u = NULL;
 	while((u = getpwent()) != NULL)
 	{
-		db_add_user(u);
+		sprintf(query, "select count(*) from %s.ignored_name where name='%s'", DBNAME, u->pw_name);
+		mysql_query(&mysql, query);
+		result = mysql_store_result(&mysql);
+		row = mysql_fetch_row(result);
+		if(atoi(row[0]) == 0) {
+			db_add_user(u);
+		}
 	}
+	mysql_free_result(result);
+	free(query);
 }
 
 void user_system_mod(int user_id) {
@@ -391,11 +403,23 @@ void users_db_system(int user_id) {
 }
 
 void groups_system_db() {
+	MYSQL_RES *result;
+	MYSQL_ROW row;
+	char *query;
+	query=(char*)malloc(300*sizeof(char));
 	struct group *g = NULL;
 	while((g = getgrent()) != NULL)
 	{
-		db_add_group(g);
+		sprintf(query, "select count(*) from %s.ignored_name where name='%s'", DBNAME, g->gr_name);
+		mysql_query(&mysql, query);
+		result = mysql_store_result(&mysql);
+		row = mysql_fetch_row(result);
+		if(atoi(row[0]) == 0) {
+			db_add_group(g);
+		}
 	}
+	mysql_free_result(result);
+	free(query);
 }
 
 void group_system_mod(int group_id) {
@@ -407,7 +431,7 @@ void group_system_mod(int group_id) {
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
 	sprintf(query, "select gid, name from %s.group where id=%d and server_id=%d and integrity_status=%d", DBNAME, group_id, server.id, ITG_NONE);
-	//printf("%s\n", query);
+	printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	if((row = mysql_fetch_row(result))) {
@@ -446,7 +470,7 @@ void group_db_system(int group_id) {
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
 	sprintf(query, "select gid, name from %s.group where id=%d and server_id=%d and integrity_status=%d", DBNAME, group_id, server.id, ITG_NONE);
-	//printf("%s\n", query);
+	printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	row = mysql_fetch_row(result);
@@ -555,7 +579,7 @@ void execute_commands() {
 }
 
 void socket_server(int port) {
-	char msg[100], buffer[255];
+	char msg[100], buffer[1];
 	int sock, clsock, n, soc_cmd = -1;
 	socklen_t clilen;
 	struct sockaddr_in serv_addr, cli_addr;
@@ -584,8 +608,8 @@ void socket_server(int port) {
 			log_message(LOG_FILE, msg);
 			return;
 		}
-		bzero(buffer,255);
-		n = read(clsock,buffer,255);
+		bzero(buffer,1);
+		n = read(clsock,buffer,1);
       if (n < 0) {
 			sprintf(msg, "ERROR: Some problems while reading from socket!");
 			log_message(LOG_FILE, msg);
@@ -599,11 +623,8 @@ void socket_server(int port) {
 				break;
 			}
 			case 1: {
-				users_system_db();
-				break;
-			}
-			case 2: {
 				groups_system_db();
+				users_system_db();
 				break;
 			}
 		}
@@ -651,7 +672,7 @@ int main(int argc, char **argv) {
 		dbname = DBNAME;
 	}
 	
-	daemonize();	
+	//daemonize();	
 	
 	db_connect(dbserver, dbuser, dbpass, dbname);
 	get_server_data();
