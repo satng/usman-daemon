@@ -210,7 +210,7 @@ void db_add_user(struct passwd *u) {
 void db_add_group(struct group *g) {
 	char *query;
 	query = (char*)malloc(200*sizeof(char));
-	sprintf(query, "insert into %s.group(name, gid, integrity_status) values('%s', %d, %d)", DBNAME, g->gr_name, g->gr_gid, ITG_OK);
+	sprintf(query, "insert into %s.group(name, gid, server_id, integrity_status) values('%s', %d, %d, %d)", DBNAME, g->gr_name, g->gr_gid, server.id, ITG_OK);
 	printf("%s\n", query);
 	mysql_query(&mysql, query);
 }
@@ -282,7 +282,7 @@ void user_system_mod(int user_id) {
 	char *cmd, *query;
 	cmd=(char*)malloc(200*sizeof(char));
 	query=(char*)malloc(300*sizeof(char));
-	sprintf(query, "select login, password, uid, group.gid, home, shell, user.name, surname, position from %s.user, %s.group where user.id=%d and user.integrity_status=%d and group.id=user.group_id", DBNAME, DBNAME, user_id, ITG_NONE);
+	sprintf(query, "select login, password, uid, group.gid, home, shell, user.name, surname, position from %s.user, %s.group where user.id=%d and user.server_id=%d and and group.server_id=%d and user.integrity_status=%d and group.id=user.group_id", DBNAME, DBNAME, user_id, server.id, server.id, ITG_NONE);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	if((row=mysql_fetch_row(result))) {
@@ -302,7 +302,7 @@ void user_system_del(int user_id) {
 	char *query, *cmd;
 	cmd=(char*)malloc(100*sizeof(char));
 	query=(char*)malloc(100*sizeof(char));
-	sprintf(query, "select login from %s.user where id=%d and integrity_status=%d", DBNAME, user_id, ITG_DEL);
+	sprintf(query, "select login from %s.user where id=%d and server_id=%d and integrity_status=%d", DBNAME, user_id, server.id, ITG_DEL);
 	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
@@ -322,7 +322,7 @@ void user_db_system(int user_id) {
 	query=(char*)malloc(300*sizeof(char));
 	struct passwd *u = NULL;
 	u=(struct passwd *)malloc(sizeof(struct passwd));
-	sprintf(query, "select login, password, uid, group.gid, home, shell, user.name, surname, position from %s.user, %s.group where user.id=%d and user.integrity_status=%d and group.id=user.group_id", DBNAME, DBNAME, user_id, ITG_NONE);
+	sprintf(query, "select login, password, uid, group.gid, home, shell, user.name, surname, position from %s.user, %s.group where server_id=%d and user.id=%d and user.integrity_status=%d and group.id=user.group_id", DBNAME, DBNAME, server.id, user_id, ITG_NONE);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	row = mysql_fetch_row(result);
@@ -342,7 +342,7 @@ void users_db_system(int user_id) {
 	query=(char*)malloc(300*sizeof(char));
 	struct passwd *u = NULL;
 	u=(struct passwd *)malloc(sizeof(struct passwd));
-	sprintf(query, "select distinct login, password, uid, group.gid, home, shell, user.name, surname from %s.user, %s.group where user.integrity_status=%d and group.id=user.group_id and user.name not in (select name from %s.ignored_name where server_id=%d and type=%d)", DBNAME, DBNAME, ITG_NONE, DBNAME, server.id, IGN_USER);
+	sprintf(query, "select distinct login, password, uid, group.gid, home, shell, user.name, surname from %s.user, %s.group where server_id=%d and user.integrity_status=%d and group.id=user.group_id and user.name not in (select name from %s.ignored_name where server_id=%d and type=%d)", DBNAME, DBNAME, server.id, ITG_NONE, DBNAME, server.id, IGN_USER);
 	printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
@@ -372,7 +372,7 @@ void group_system_mod(int group_id) {
 	query=(char*)malloc(200*sizeof(char));
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
-	sprintf(query, "select gid, name from %s.group where id=%d and integrity_status=%d", DBNAME, group_id, ITG_NONE);
+	sprintf(query, "select gid, name from %s.group where id=%d and server_id=%d and integrity_status=%d", DBNAME, group_id, server.id, ITG_NONE);
 	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
@@ -392,7 +392,7 @@ void group_system_del(int group_id) {
 	char *query, *cmd;
 	cmd=(char*)malloc(100*sizeof(char));
 	query=(char*)malloc(100*sizeof(char));
-	sprintf(query, "select name from %s.group where id=%d and integrity_status=%d", DBNAME, group_id, ITG_DEL);
+	sprintf(query, "select name from %s.group where id=%d and server_id=%d and integrity_status=%d", DBNAME, group_id, server.id, ITG_DEL);
 	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
@@ -411,7 +411,7 @@ void group_db_system(int group_id) {
 	query=(char*)malloc(200*sizeof(char));
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
-	sprintf(query, "select gid, name from %s.group where id=%d and integrity_status=%d", DBNAME, group_id, ITG_NONE);
+	sprintf(query, "select gid, name from %s.group where id=%d and server_id=%d and integrity_status=%d", DBNAME, group_id, server.id, ITG_NONE);
 	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
