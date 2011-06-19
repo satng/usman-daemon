@@ -309,15 +309,16 @@ void users_system_db() {
 	int ign_count, usr_count;
 	query=(char*)malloc(300*sizeof(char));
    struct passwd *u = NULL;
+   setpwent();
 	while((u = getpwent()) != NULL)
 	{
-		sprintf(query, "select count(*) from %s.user where uid=%d", DBNAME, u->pw_uid);
+		sprintf(query, "select count(*) from %s.user where uid=%d and server_id=%d", DBNAME, u->pw_uid, server.id);
 		mysql_query(&mysql, query);
 		result = mysql_store_result(&mysql);
 		row = mysql_fetch_row(result);
 		usr_count = atoi(row[0]);
 		if(usr_count == 0) {
-			sprintf(query, "select count(*) from %s.ignored_name where name='%s'", DBNAME, u->pw_name);
+			sprintf(query, "select count(*) from %s.ignored_name where name='%s' and server_id=%d", DBNAME, u->pw_name, server.id);
 			mysql_query(&mysql, query);
 			result = mysql_store_result(&mysql);
 			row = mysql_fetch_row(result);
@@ -378,14 +379,22 @@ void user_db_system(int user_id) {
 	query=(char*)malloc(300*sizeof(char));
 	struct passwd *u = NULL;
 	u=(struct passwd *)malloc(sizeof(struct passwd));
-	sprintf(query, "select login, password, uid, group.gid, home, shell, user.name, surname, position from %s.user, %s.group where server_id=%d and user.id=%d and user.integrity_status=%d and group.id=user.group_id", DBNAME, DBNAME, server.id, user_id, ITG_NONE);
+	sprintf(query, "select login, password, group.gid, home, shell, user.name, surname, position from %s.user, %s.group where user.server_id=%d and user.id=%d and user.integrity_status=%d and group.id=user.group_id", DBNAME, DBNAME, server.id, user_id, ITG_NONE);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	row = mysql_fetch_row(result);
-	sprintf(cmd, "useradd -p %s -u %s -g %s -d %s -s %s -c '%s %s %s' -m %s", row[1], row[2], row[3], row[4], row[5], row[6] ? row[6] : "", row[7] ? row[7] : "", row[8] ? row[8] : "", row[0]);
+	sprintf(cmd, "useradd -p '%s' -g %s -d %s -s %s -c '%s %s %s' -m %s", row[1] ? row[1] : "x", row[2], row[3], row[4], row[5] ? row[5] : "", row[6] ? row[6] : "", row[7] ? row[7] : "", row[0]);
+	//printf("%s\n", cmd);
 	exec(cmd);
-	sprintf(query, "update %s.user set integrity_status=%d where id=%d", DBNAME, ITG_OK, user_id);
-	mysql_query(&mysql, query);
+	setpwent();
+	while((u = getpwent()) != NULL) {
+		if(strcmp(u->pw_name, row[0]) == 0) {
+			sprintf(query, "update %s.user set uid=%d, integrity_status=%d where id=%d", DBNAME, u->pw_uid, ITG_OK, user_id);
+			mysql_query(&mysql, query);
+			break;
+		}
+	}
+	endpwent();
 	mysql_free_result(result);
 	free(query); free(cmd);
 }
@@ -419,15 +428,16 @@ void groups_system_db() {
 	int ign_count, gr_count;
 	query=(char*)malloc(300*sizeof(char));
 	struct group *g = NULL;
+	setgrent();
 	while((g = getgrent()) != NULL) {
-		sprintf(query, "select count(*) from %s.group where gid=%d", DBNAME, g->gr_gid);
+		sprintf(query, "select count(*) from %s.group where gid=%d and server_id=%d", DBNAME, g->gr_gid, server.id);
 		//printf("%s\n", query);
 		mysql_query(&mysql, query);
 		result = mysql_store_result(&mysql);
 		row = mysql_fetch_row(result);
 		gr_count = atoi(row[0]);
 		if(gr_count == 0) {
-			sprintf(query, "select count(*) from %s.ignored_name where name='%s'", DBNAME, g->gr_name);
+			sprintf(query, "select count(*) from %s.ignored_name where name='%s' and server_id=%d", DBNAME, g->gr_name, server.id);
 			//printf("%s\n", query);
 			mysql_query(&mysql, query);
 			result = mysql_store_result(&mysql);
@@ -490,15 +500,22 @@ void group_db_system(int group_id) {
 	query=(char*)malloc(200*sizeof(char));
 	struct group *g = NULL;
 	g=(struct group *)malloc(sizeof(struct group));
-	sprintf(query, "select gid, name from %s.group where id=%d and server_id=%d and integrity_status=%d", DBNAME, group_id, server.id, ITG_NONE);
+	sprintf(query, "select name from %s.group where id=%d and server_id=%d and integrity_status=%d", DBNAME, group_id, server.id, ITG_NONE);
 	//printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	row = mysql_fetch_row(result);
-	sprintf(cmd, "groupadd -g %d %s", atoi(row[0]), row[1]);
+	sprintf(cmd, "groupadd %s", row[0]);
 	exec(cmd);
-	sprintf(query, "update %s.group set integrity_status=%d where id=%d", DBNAME, ITG_OK, group_id);
-	mysql_query(&mysql, query);
+	setgrent();
+	while((g = getgrent()) != NULL) {
+		if(strcmp(g->gr_name, row[0]) == 0) {
+			sprintf(query, "update %s.group set gid=%d, integrity_status=%d where id=%d", DBNAME, g->gr_gid, ITG_OK, group_id);
+			mysql_query(&mysql, query);
+			break;
+		}
+	}
+	endgrent();
 	mysql_free_result(result);
 }
 
@@ -530,7 +547,7 @@ void execute_commands() {
 	query = (char*)malloc(200*sizeof(char));
 	msg = (char*)malloc(100*sizeof(char));
 	sprintf(query, "select command_type, user_id, group_id, extra_arg, id from %s.command where command.server_id='%d'", DBNAME, server.id);
-	//printf("%s\n", query);
+	printf("%s\n", query);
 	mysql_query(&mysql, query);
 	result = mysql_store_result(&mysql);
 	while ((row = mysql_fetch_row(result)))
