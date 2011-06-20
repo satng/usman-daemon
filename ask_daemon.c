@@ -709,7 +709,7 @@ int main(int argc, char **argv) {
 		dbname = DBNAME;
 	}
 	
-	//daemonize();	
+	daemonize();	
 	
 	db_connect(dbserver, dbuser, dbpass, dbname);
 	get_server_data();
